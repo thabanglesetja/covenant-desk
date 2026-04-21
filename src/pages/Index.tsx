@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import heroImg from "@/assets/deal-hero.jpg";
 import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { LogIn, UserPlus } from "lucide-react";
@@ -60,7 +61,10 @@ const Index = () => {
       <div className="mx-auto grid min-h-screen max-w-7xl overflow-hidden rounded-none bg-background lg:min-h-[calc(100vh-3rem)] lg:grid-cols-2 lg:rounded-3xl lg:shadow-card">
         {/* LEFT — auth */}
         <section className="flex flex-col px-6 py-10 sm:px-12 lg:px-16 lg:py-14">
-          <Logo />
+          <div className="flex items-center justify-between">
+            <Logo />
+            <ThemeToggle />
+          </div>
 
           <div className="mx-auto mt-12 w-full max-w-md flex-1">
             <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">

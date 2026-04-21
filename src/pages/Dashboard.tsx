@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { alisApi } from "@/lib/alisApi";
 import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,7 @@ const Dashboard = () => {
               </p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
+            <ThemeToggle />
             <Button variant="outline" size="sm" onClick={onLogout}>
               <LogOut className="h-4 w-4" /> Logout
             </Button>
