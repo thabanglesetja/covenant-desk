@@ -1,17 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// API ENGINE — All server communication lives here
+// LOCAL MOCK API ENGINE — Stores users & deals in localStorage
 // ─────────────────────────────────────────────────────────────────────────────
 export const CONFIG = {
-  API_BASE: "http://localhost:8081/api",
   MAX_FILE_MB: 10,
   SESSION_KEY: "alis_session_v1",
+  USERS_KEY: "alis_users_v1",
+  DEALS_KEY: "alis_deals_v1",
   TOAST_DURATION_MS: 4500,
 };
 
 export type Role = "Deal Maker" | "Legal Practitioner";
 
 export interface SessionUser {
-  id?: string | number;
+  id: string;
   name: string;
   surname: string;
   email: string;
@@ -20,55 +21,86 @@ export interface SessionUser {
   [key: string]: unknown;
 }
 
+interface StoredUser extends SessionUser {
+  password: string;
+}
+
 interface ApiResult<T = any> {
   ok: boolean;
   status: number;
   data: T & { message?: string };
 }
 
-async function _req<T = any>(endpoint: string, options: RequestInit = {}): Promise<ApiResult<T>> {
-  try {
-    const isForm = options.body instanceof FormData;
-    const res = await fetch(`${CONFIG.API_BASE}${endpoint}`, {
-      ...options,
-      headers: isForm
-        ? {}
-        : { "Content-Type": "application/json", ...(options.headers || {}) },
-    });
-    const text = await res.text();
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { message: text };
-    }
-    return { ok: res.ok, status: res.status, data };
-  } catch (err: any) {
-    return {
-      ok: false,
-      status: 0,
-      data: { message: `Network error: ${err.message}` } as any,
-    };
-  }
-}
+// ── helpers ──────────────────────────────────────────────────────────────────
+const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
+const readUsers = (): StoredUser[] => {
+  try {
+    return JSON.parse(localStorage.getItem(CONFIG.USERS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+const writeUsers = (users: StoredUser[]) =>
+  localStorage.setItem(CONFIG.USERS_KEY, JSON.stringify(users));
+
+const readDeals = (): any[] => {
+  try {
+    return JSON.parse(localStorage.getItem(CONFIG.DEALS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+const writeDeals = (deals: any[]) =>
+  localStorage.setItem(CONFIG.DEALS_KEY, JSON.stringify(deals));
+
+const ok = <T,>(data: T, status = 200): ApiResult<T> => ({ ok: true, status, data: data as any });
+const fail = (message: string, status = 400): ApiResult<any> => ({
+  ok: false,
+  status,
+  data: { message },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 export const alisApi = {
   // AUTH
-  register: (name: string, surname: string, email: string, role: Role, password: string) =>
-    _req("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ name, surname, email, role, password }),
-    }),
-
-  login: async (email: string, password: string) => {
-    const res = await _req<SessionUser>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    if (res.ok) {
-      localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(res.data));
+  register: async (
+    name: string,
+    surname: string,
+    email: string,
+    role: Role,
+    password: string,
+  ): Promise<ApiResult> => {
+    await delay();
+    const users = readUsers();
+    const normalized = email.trim().toLowerCase();
+    if (users.find((u) => u.email.toLowerCase() === normalized)) {
+      return fail("An account with that email already exists", 409);
     }
-    return res;
+    const newUser: StoredUser = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      surname: surname.trim(),
+      email: normalized,
+      role,
+      password,
+    };
+    users.push(newUser);
+    writeUsers(users);
+    return ok({ message: "Registered successfully", id: newUser.id }, 201);
+  },
+
+  login: async (email: string, password: string): Promise<ApiResult<SessionUser>> => {
+    await delay();
+    const users = readUsers();
+    const normalized = email.trim().toLowerCase();
+    const found = users.find((u) => u.email.toLowerCase() === normalized);
+    if (!found) return fail("No account found with that email", 404);
+    if (found.password !== password) return fail("Incorrect password", 401);
+    const { password: _pw, ...session } = found;
+    const sessionUser: SessionUser = { ...session, token: crypto.randomUUID() };
+    localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(sessionUser));
+    return ok(sessionUser);
   },
 
   logout: () => {
@@ -81,30 +113,46 @@ export const alisApi = {
   },
 
   // DEAL MAKER FEATURES
-  createDeal: (deal: Record<string, unknown>) =>
-    _req("/deals", { method: "POST", body: JSON.stringify(deal) }),
-  getMyDeals: () => _req("/deals/my"),
+  createDeal: async (deal: Record<string, unknown>): Promise<ApiResult> => {
+    await delay();
+    const user = alisApi.getCurrentUser();
+    if (!user) return fail("Not authenticated", 401);
+    const deals = readDeals();
+    const newDeal = {
+      id: crypto.randomUUID(),
+      ownerId: user.id,
+      status: "PENDING",
+      createdAt: new Date().toISOString(),
+      ...deal,
+    };
+    deals.push(newDeal);
+    writeDeals(deals);
+    return ok(newDeal, 201);
+  },
+  getMyDeals: async (): Promise<ApiResult> => {
+    await delay(150);
+    const user = alisApi.getCurrentUser();
+    if (!user) return fail("Not authenticated", 401);
+    return ok(readDeals().filter((d) => d.ownerId === user.id));
+  },
 
   // LEGAL PRACTITIONER FEATURES
-  getAssignedDeals: () => _req("/deals/assigned"),
-  reviewDeal: (dealId: string | number, action: "APPROVE" | "REJECT" | "REQUEST_CHANGES") =>
-    _req(`/deals/${dealId}/review`, {
-      method: "POST",
-      body: JSON.stringify({ action }),
-    }),
-
-  // OPTIONAL
-  getDocuments: (clientId: string | number) => _req(`/documents/client/${clientId}`),
-  uploadDocument: (file: File, clientId: string | number) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("clientId", String(clientId));
-    return _req("/documents/upload", { method: "POST", body: fd });
+  getAssignedDeals: async (): Promise<ApiResult> => {
+    await delay(150);
+    return ok(readDeals().filter((d) => d.status === "PENDING"));
   },
-  deleteDocument: (id: string | number) => _req(`/documents/${id}`, { method: "DELETE" }),
-  getReports: (clientId: string | number) => _req(`/reports/client/${clientId}`),
-  getPdfUrl: (reportId: string | number) =>
-    `${CONFIG.API_BASE}/reports/${reportId}/download-pdf`,
+  reviewDeal: async (
+    dealId: string,
+    action: "APPROVE" | "REJECT" | "REQUEST_CHANGES",
+  ): Promise<ApiResult> => {
+    await delay();
+    const deals = readDeals();
+    const idx = deals.findIndex((d) => d.id === dealId);
+    if (idx === -1) return fail("Deal not found", 404);
+    deals[idx].status = action;
+    writeDeals(deals);
+    return ok(deals[idx]);
+  },
 };
 
 // SESSION PERSISTENCE (sessionStorage shadow)
