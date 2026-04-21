@@ -40,6 +40,7 @@ const Dashboard = () => {
               </p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
+            <ThemeToggle />
             <Button variant="outline" size="sm" onClick={onLogout}>
               <LogOut className="h-4 w-4" /> Logout
             </Button>
