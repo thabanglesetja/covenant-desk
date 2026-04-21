@@ -116,7 +116,7 @@ const Dashboard = () => {
           <CardHeader>
             <CardTitle>{isDealMaker ? "Your deals" : "Deals to review"}</CardTitle>
             <CardDescription>
-              Connect to the API at <code className="rounded bg-muted px-1.5 py-0.5 text-xs">http://localhost:8081/api</code> to start managing data.
+              Your data is stored locally in this browser for preview purposes.
             </CardDescription>
           </CardHeader>
           <CardContent>
