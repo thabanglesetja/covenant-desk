@@ -19,7 +19,7 @@ export const LoginForm = () => {
     const res = await alisApi.login(email, password);
     setLoading(false);
     if (res.ok) {
-      toast.success(`Welcome back, ${(res.data as any)?.name ?? ""}`);
+      toast.success(`Welcome back, ${(res.data as any)?.fullName ?? ""}`);
       navigate("/dashboard");
     } else {
       toast.error(res.data?.message || "Invalid credentials");
