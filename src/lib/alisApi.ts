@@ -1,45 +1,103 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ALIS API ENGINE — Remote backend integration
+// ALIS Legal Compliance API — client
+// Matches OpenAPI spec: ALIS Legal Compliance API v1.0.0
 // ─────────────────────────────────────────────────────────────────────────────
 export const CONFIG = {
-  API_BASE: "https://alis-backend.example.com/api",
-  MAX_FILE_MB: 10,
+  API_BASE: "http://localhost:8081",
   SESSION_KEY: "alis_session_v1",
   TOAST_DURATION_MS: 4500,
 };
 
-export type Role = "Deal Maker" | "Legal Practitioner";
+// ── API enums / types ────────────────────────────────────────────────────────
+export type ApiRole =
+  | "ADMIN"
+  | "ATTORNEY"
+  | "PARALEGAL"
+  | "USER"
+  | "LEGAL_PRACTITIONER"
+  | "DEAL_MAKER";
 
-export interface SessionUser {
-  id: string;
-  name: string;
-  surname: string;
-  email: string;
-  role: Role;
-  token?: string;
-  [key: string]: unknown;
+export type UiRole = "Deal Maker" | "Legal Practitioner";
+
+export const uiToApiRole = (r: UiRole): ApiRole =>
+  r === "Deal Maker" ? "DEAL_MAKER" : "LEGAL_PRACTITIONER";
+
+export const apiToUiRole = (r: string): UiRole =>
+  r === "DEAL_MAKER" ? "Deal Maker" : "Legal Practitioner";
+
+export interface AuthResponse {
+  message?: string;
+  clientId?: number;
+  email?: string;
+  fullName?: string;
+  role?: string;
+  success?: boolean;
 }
 
-interface ApiResult<T = any> {
+export interface SessionUser {
+  clientId: number;
+  fullName: string;
+  email: string;
+  role: ApiRole;
+  token?: string;
+}
+
+export interface DealMakerRequest {
+  fullName: string;
+  email: string;
+  password: string;
+  companyName: string;
+  dealSpecialty: string;
+}
+
+export interface LegalPractitionerRequest {
+  fullName: string;
+  email: string;
+  password: string;
+  barNumber: string;
+  lawFirm: string;
+}
+
+export interface DocumentResponseDTO {
+  documentId: number;
+  title: string;
+  status: string;
+  ingestionSource: string;
+  uploadedAt: string;
+  filePath: string;
+  fileUrl: string;
+  clientId: number;
+}
+
+export interface ReportInfoDTO {
+  reportId: number;
+  documentId: number;
+  documentTitle: string;
+  riskLevel: "LOW" | "MEDIUM" | "HIGH";
+  analysisStatus: "PENDING" | "COMPLETED" | "FAILED";
+  aiRecommendation: string;
+  generatedAt: string;
+  modelVersion: string;
+}
+
+export interface ApiResult<T = any> {
   ok: boolean;
   status: number;
-  data: T & { message?: string };
+  data: (T & { message?: string }) | any;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-const getToken = (): string | null => {
-  const u = session.load();
-  return u?.token ?? null;
-};
+const getToken = (): string | null => session.load()?.token ?? null;
 
 const request = async <T = any>(
   path: string,
   options: RequestInit = {},
+  isJson = true,
 ): Promise<ApiResult<T>> => {
   try {
     const token = getToken();
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      ...(isJson ? { "Content-Type": "application/json" } : {}),
       ...(options.headers as Record<string, string> | undefined),
     };
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -49,40 +107,55 @@ const request = async <T = any>(
     const data = contentType.includes("application/json")
       ? await res.json()
       : { message: await res.text() };
-    return { ok: res.ok, status: res.status, data: data as any };
+    return { ok: res.ok, status: res.status, data };
   } catch (err: any) {
     return {
       ok: false,
       status: 0,
-      data: { message: err?.message || "Network error" } as any,
+      data: { message: err?.message || "Network error" },
     };
   }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 export const alisApi = {
-  // AUTH
-  register: async (
-    name: string,
-    surname: string,
-    email: string,
-    role: Role,
-    password: string,
-  ): Promise<ApiResult> => {
-    return request("/auth/register", {
+  // ── AUTH ───────────────────────────────────────────────────────────────────
+  registerBasic: (fullName: string, email: string, password: string) =>
+    request<AuthResponse>("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, surname, email, role, password }),
-    });
-  },
+      body: JSON.stringify({ fullName, email, password }),
+    }),
 
-  login: async (email: string, password: string): Promise<ApiResult<SessionUser>> => {
-    const res = await request<SessionUser>("/auth/login", {
+  registerDealMaker: (body: DealMakerRequest) =>
+    request("/api/dealmakers", { method: "POST", body: JSON.stringify(body) }),
+
+  registerLegalPractitioner: (body: LegalPractitionerRequest) =>
+    request("/api/legal-practitioners", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
+    }),
+
+  login: async (
+    emailOrUsername: string,
+    password: string,
+  ): Promise<ApiResult<AuthResponse>> => {
+    const res = await request<AuthResponse>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: emailOrUsername,
+        username: emailOrUsername,
+        password,
+      }),
     });
-    if (res.ok && res.data) {
-      session.save(res.data as SessionUser);
-      localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(res.data));
+    if (res.ok && res.data?.success !== false && res.data?.clientId) {
+      const u: SessionUser = {
+        clientId: res.data.clientId,
+        fullName: res.data.fullName ?? "",
+        email: res.data.email ?? emailOrUsername,
+        role: (res.data.role as ApiRole) ?? "USER",
+      };
+      session.save(u);
+      localStorage.setItem(CONFIG.SESSION_KEY, JSON.stringify(u));
     }
     return res;
   },
@@ -104,30 +177,47 @@ export const alisApi = {
     return session.load();
   },
 
-  // DEAL MAKER FEATURES
-  createDeal: async (deal: Record<string, unknown>): Promise<ApiResult> => {
-    return request("/deals", {
-      method: "POST",
-      body: JSON.stringify(deal),
-    });
-  },
-  getMyDeals: async (): Promise<ApiResult> => {
-    return request("/deals/mine", { method: "GET" });
+  // ── DOCUMENTS ──────────────────────────────────────────────────────────────
+  uploadDocument: async (clientId: number, file: File): Promise<ApiResult> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request(
+      `/api/documents/upload?clientId=${clientId}`,
+      { method: "POST", body: fd },
+      false,
+    );
   },
 
-  // LEGAL PRACTITIONER FEATURES
-  getAssignedDeals: async (): Promise<ApiResult> => {
-    return request("/deals/assigned", { method: "GET" });
-  },
-  reviewDeal: async (
-    dealId: string,
-    action: "APPROVE" | "REJECT" | "REQUEST_CHANGES",
-  ): Promise<ApiResult> => {
-    return request(`/deals/${dealId}/review`, {
-      method: "POST",
-      body: JSON.stringify({ action }),
-    });
-  },
+  getDocumentsByClient: (clientId: number) =>
+    request<DocumentResponseDTO[]>(`/api/documents/client/${clientId}`),
+
+  getAllDocuments: () => request<DocumentResponseDTO[]>("/api/documents/all"),
+
+  getDocumentById: (id: number) =>
+    request<DocumentResponseDTO>(`/api/documents/${id}`),
+
+  deleteDocument: (id: number) =>
+    request(`/api/documents/${id}`, { method: "DELETE" }),
+
+  // ── REPORTS (AI compliance results) ────────────────────────────────────────
+  getReportsByClient: (clientId: number) =>
+    request<ReportInfoDTO[]>(`/api/reports/client/${clientId}`),
+
+  getReportsByDocument: (documentId: number) =>
+    request<ReportInfoDTO[]>(`/api/reports/document/${documentId}`),
+
+  getReportById: (reportId: number) =>
+    request<ReportInfoDTO>(`/api/reports/${reportId}`),
+
+  downloadReportPdf: (reportId: number) =>
+    `${CONFIG.API_BASE}/api/reports/${reportId}/download-pdf`,
+
+  // ── PROFILES ───────────────────────────────────────────────────────────────
+  getDealMakers: () => request("/api/dealmakers"),
+  getLegalPractitioners: () => request("/api/legal-practitioners"),
+
+  // ── ADMIN ──────────────────────────────────────────────────────────────────
+  getAdminDashboard: () => request("/api/admin/dashboard"),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
