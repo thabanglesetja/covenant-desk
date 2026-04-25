@@ -26,7 +26,9 @@ import {
   Gavel,
   Download,
   Loader2,
+  Scale,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 const Dashboard = () => {
@@ -147,7 +149,14 @@ const Dashboard = () => {
                 : "Upload deal documents and track their compliance status."}
             </p>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            {isLegalPractitioner && (
+              <Button variant="outline" size="lg" asChild>
+                <Link to="/law-rules">
+                  <Scale className="h-4 w-4" /> Manage Law Rules
+                </Link>
+              </Button>
+            )}
             <input
               ref={fileInput}
               type="file"
