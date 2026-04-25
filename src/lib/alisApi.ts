@@ -3,7 +3,7 @@
 // Matches OpenAPI spec: ALIS Legal Compliance API v1.0.0
 // ─────────────────────────────────────────────────────────────────────────────
 export const CONFIG = {
-  API_BASE: "http://localhost:8081",
+  API_BASE: "https://alis-backend-1.onrender.com",
   SESSION_KEY: "alis_session_v1",
   TOAST_DURATION_MS: 4500,
 };
